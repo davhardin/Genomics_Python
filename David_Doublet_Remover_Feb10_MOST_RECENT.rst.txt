@@ -1,0 +1,2124 @@
+.. code:: ipython3
+
+    # -------------------------------
+    # Step 0: Imports
+    # -------------------------------
+    
+    import os
+    import numpy as np
+    import scanpy as sc
+    import pandas as pd
+    import seaborn as sns
+    from pathlib import Path
+    import scvi
+    
+    # Working Directory
+    base = Path("/home/tsaliu")
+
+.. code:: ipython3
+
+    print(os.getcwd()) # Check working directory
+
+.. code:: ipython3
+
+    # -------------------------------
+    # Step 1: Define Paths
+    # -------------------------------
+    WBC_dir = base / "WBC Samples"
+    Liver_dir = base / "Liver Samples" # changed AFTER tar extract debug
+
+.. code:: ipython3
+
+    # -------------------------------
+    # Step 2: Adata Files (Liver)
+    # -------------------------------
+    
+    ## --- LIVER samples (GSE159977) ---
+    
+    # Borderline NASH Patients
+    
+    adata1 = sc.read_h5ad(Liver_dir/ "Liver_PT-5.h5ad")
+    adata2 = sc.read_h5ad(Liver_dir/ "Liver_PT-9.h5ad")
+    adata3 = sc.read_h5ad(Liver_dir/ "Liver_PT-11.h5ad")
+    
+    # NASH Patients
+    
+    adata4 = sc.read_h5ad(Liver_dir/ "Liver_PT-8.h5ad")
+    adata5 = sc.read_h5ad(Liver_dir/ "Liver_PT-19.h5ad")
+    adata6 = sc.read_h5ad(Liver_dir/ "Liver_PT-21.h5ad")
+    
+    # Controls / Healthy Liver 
+    
+    adata7 = sc.read_h5ad(Liver_dir/ "Liver_PT-12.h5ad")
+    adata8 = sc.read_h5ad(Liver_dir/ "Liver_PT-16.h5ad")
+    adata9 = sc.read_h5ad(Liver_dir/ "Liver_PT-17.h5ad")
+    adata10 = sc.read_h5ad(Liver_dir/ "Liver_PT-20.h5ad")
+
+.. code:: ipython3
+
+    # -------------------------------
+    # Step 2.5: Adata Files (WBCs)
+    # -------------------------------
+    
+    ## --- Samples (GSE267033) ---
+    
+    # Patient Samples
+    
+    adata11 = sc.read_h5ad(WBC_dir / "WBC_PT-2.h5ad")
+    adata12 = sc.read_h5ad(WBC_dir / "WBC_PT-5.h5ad")
+    adata13 = sc.read_h5ad(WBC_dir / "WBC_PT-6.h5ad")
+    adata14 = sc.read_h5ad(WBC_dir / "WBC_PT-8.h5ad")
+    adata15 = sc.read_h5ad(WBC_dir / "WBC_PT-10.h5ad")
+    adata16 = sc.read_h5ad(WBC_dir / "WBC_PT-13.h5ad")
+    adata17 = sc.read_h5ad(WBC_dir / "WBC_PT-14.h5ad")
+    adata18 = sc.read_h5ad(WBC_dir / "WBC_PT-15.h5ad")
+    adata19 = sc.read_h5ad(WBC_dir / "WBC_PT-36.h5ad")
+    
+    # Controls
+    
+    adata20 = sc.read_h5ad(WBC_dir / "WBC_CT-1.h5ad")
+    adata21 = sc.read_h5ad(WBC_dir / "WBC_CT-2.h5ad")
+    adata22 = sc.read_h5ad(WBC_dir / "WBC_CT-3.h5ad")
+    adata23 = sc.read_h5ad(WBC_dir / "WBC_CT-4.h5ad")
+    adata24 = sc.read_h5ad(WBC_dir / "WBC_CT-5.h5ad")
+    adata25 = sc.read_h5ad(WBC_dir / "WBC_CT-9.h5ad")
+
+.. code:: ipython3
+
+    # -------------------------------
+    # Step 3: Figure Settings
+    # -------------------------------
+    
+    from matplotlib.pyplot import rc_context
+    sc.set_figure_params(dpi=100)
+    
+    import warnings
+    warnings.simplefilter("ignore", FutureWarning)
+    warnings.simplefilter("ignore", UserWarning)
+    warnings.simplefilter("ignore", RuntimeWarning)
+
+.. code:: ipython3
+
+    # -------------------------------
+    # Step 4: SOLO model training and doublet removal
+    # -------------------------------
+    
+    #### 
+    
+        ## START OF LIVER SAMPLES ##
+    
+    ####
+
+.. code:: ipython3
+
+    ## Sample 1
+    
+    # Liver_PT-5: filtered cells=10120
+
+.. code:: ipython3
+
+    # Filter Settings
+    sc.pp.filter_genes(adata1, min_cells = 10)
+    sc.pp.highly_variable_genes(adata1, n_top_genes = 3000, subset = True, flavor = 'seurat_v3')
+
+.. code:: ipython3
+
+    # Model Training
+    scvi.model.SCVI.setup_anndata(adata1) 
+    vae = scvi.model.SCVI(adata1)
+    vae.train()
+
+.. code:: ipython3
+
+    # Solo Model
+    solo = scvi.external.SOLO.from_scvi_model(vae)
+    solo.train()
+    solo.predict()
+    df = solo.predict()
+    df['prediction'] = solo.predict(soft = False)
+    
+    df.groupby('prediction').count()
+    df['dif'] = df.doublet - df.singlet
+    df
+
+.. code:: ipython3
+
+    # Doublet Prediction Plot
+    sns.displot(df[df.prediction == 'doublet'], x = 'dif')
+
+.. code:: ipython3
+
+    doublets = df[(df.prediction == 'doublet') & (df.dif > 0.7)]
+    doublets
+    adata1 = sc.read_h5ad(Liver_dir/ "Liver_PT-5.h5ad")
+    adata1.obs
+    adata1.obs['doublet'] = adata1.obs.index.isin(doublets.index) 
+    adata1.obs
+    adata1 = adata1[~adata1.obs.doublet]
+    # Save the filtered AnnData object
+    adata1.write("Liver_PT-5_with_SOLO.h5ad")
+
+.. code:: ipython3
+
+    ## Sample 2
+    
+    # Liver_PT-9: filtered cells=30355
+
+.. code:: ipython3
+
+    # Filter Settings
+    sc.pp.filter_genes(adata2, min_cells = 10)
+    sc.pp.highly_variable_genes(adata2, n_top_genes = 3000, subset = True, flavor = 'seurat_v3')
+
+.. code:: ipython3
+
+    # Model Training
+    scvi.model.SCVI.setup_anndata(adata2)
+    vae = scvi.model.SCVI(adata2)
+    vae.train()
+
+.. code:: ipython3
+
+    # Solo Model
+    solo = scvi.external.SOLO.from_scvi_model(vae)
+    solo.train()
+    solo.predict()
+    df = solo.predict()
+    df['prediction'] = solo.predict(soft = False)
+    df
+    df.groupby('prediction').count()
+    df['dif'] = df.doublet - df.singlet
+    df
+
+.. code:: ipython3
+
+    # Doublet Prediction Plot
+    sns.displot(df[df.prediction == 'doublet'], x = 'dif')
+
+.. code:: ipython3
+
+    # Doublet Removal
+    doublets = df[(df.prediction == 'doublet') & (df.dif > 0.7)]
+    doublets
+    adata2 = sc.read_h5ad(Liver_dir/ "Liver_PT-9.h5ad")
+    adata2.obs
+    adata2.obs['doublet'] = adata2.obs.index.isin(doublets.index) 
+    adata2.obs
+    adata2 = adata2[~adata2.obs.doublet]
+    # Save the filtered AnnData object
+    adata2.write("Liver_PT-9_with_SOLO.h5ad")
+
+.. code:: ipython3
+
+    ## Sample 3 
+    
+    # Liver_PT-11: filtered cells=9554
+
+.. code:: ipython3
+
+    # Filter Settings
+    
+    sc.pp.filter_genes(adata3, min_cells = 10)
+    sc.pp.highly_variable_genes(adata3, n_top_genes = 3000, subset = True, flavor = 'seurat_v3')                
+
+.. code:: ipython3
+
+    # Model Training
+    scvi.model.SCVI.setup_anndata(adata3)
+    vae = scvi.model.SCVI(adata3)
+    vae.train()   
+
+.. code:: ipython3
+
+    # Solo Model
+    solo = scvi.external.SOLO.from_scvi_model(vae)
+    solo.train()
+    solo.predict()
+    df = solo.predict()
+    df['prediction'] = solo.predict(soft = False)
+    df
+    df.groupby('prediction').count()
+    df['dif'] = df.doublet - df.singlet
+    df
+
+.. code:: ipython3
+
+    # Doublet Prediction Plot
+    sns.displot(df[df.prediction == 'doublet'], x = 'dif')
+
+.. code:: ipython3
+
+    # Doublet Removal
+    doublets = df[(df.prediction == 'doublet') & (df.dif > 0.7)]
+    doublets
+    adata3 = sc.read_h5ad(Liver_dir/ "Liver_PT-11.h5ad")
+    adata3.obs
+    adata3.obs['doublet'] = adata3.obs.index.isin(doublets.index) 
+    adata3.obs
+    adata3 = adata3[~adata3.obs.doublet]
+    # Save the filtered AnnData object
+    adata3.write("Liver_PT-11_with_SOLO.h5ad")
+
+.. code:: ipython3
+
+    ## Sample 4
+    
+    # Liver_PT-8: filtered cells=15007
+
+.. code:: ipython3
+
+    # Filter Settings
+    sc.pp.filter_genes(adata4, min_cells = 10)
+    sc.pp.highly_variable_genes(adata4, n_top_genes = 3000, subset = True, flavor = 'seurat_v3')
+
+.. code:: ipython3
+
+    # Model Training
+    scvi.model.SCVI.setup_anndata(adata4)
+    vae = scvi.model.SCVI(adata4)
+    vae.train()
+
+.. code:: ipython3
+
+    # Solo Model
+    solo = scvi.external.SOLO.from_scvi_model(vae)
+    solo.train()
+    solo.predict()
+    df = solo.predict()
+    df['prediction'] = solo.predict(soft = False)
+    df
+    df.groupby('prediction').count()
+    df['dif'] = df.doublet - df.singlet
+    df
+
+.. code:: ipython3
+
+    # Doublet Prediction Plot
+    sns.displot(df[df.prediction == 'doublet'], x = 'dif')
+
+.. code:: ipython3
+
+    # Doublet Removal
+    doublets = df[(df.prediction == 'doublet') & (df.dif > 0.7)]
+    doublets
+    adata4 = sc.read_h5ad(Liver_dir/ "Liver_PT-8.h5ad")
+    adata4.obs
+    adata4.obs['doublet'] = adata4.obs.index.isin(doublets.index) 
+    adata4.obs
+    adata4 = adata4[~adata4.obs.doublet]
+    # Save the filtered AnnData object
+    adata4.write("Liver_PT-8_with_SOLO.h5ad")
+
+.. code:: ipython3
+
+    ## Sample 5
+    
+    # Liver_PT-19: filtered cells=9550
+
+.. code:: ipython3
+
+    # Filter Settings
+    sc.pp.filter_genes(adata5, min_cells = 10)
+    sc.pp.highly_variable_genes(adata5, n_top_genes = 3000, subset = True, flavor = 'seurat_v3')
+
+.. code:: ipython3
+
+    # Model Training
+    scvi.model.SCVI.setup_anndata(adata5)
+    vae = scvi.model.SCVI(adata5)
+    vae.train()
+
+.. code:: ipython3
+
+    # Solo Model
+    solo = scvi.external.SOLO.from_scvi_model(vae)
+    solo.train()
+    solo.predict()
+    df = solo.predict()
+    df['prediction'] = solo.predict(soft = False)
+    df
+    df.groupby('prediction').count()
+    df['dif'] = df.doublet - df.singlet
+    df
+
+.. code:: ipython3
+
+    # Doublet Prediction Plot
+    sns.displot(df[df.prediction == 'doublet'], x = 'dif')
+
+.. code:: ipython3
+
+    # Doublet Removal
+    doublets = df[(df.prediction == 'doublet') & (df.dif > 0.7)]
+    doublets
+    adata5 = sc.read_h5ad(Liver_dir/ "Liver_PT-19.h5ad")
+    adata5.obs
+    adata5.obs['doublet'] = adata5.obs.index.isin(doublets.index) 
+    adata5.obs
+    adata5 = adata5[~adata5.obs.doublet]
+    # Save the filtered AnnData object
+    adata5.write("Liver_PT-19_with_SOLO.h5ad")
+
+.. code:: ipython3
+
+    ## Sample 6
+    
+    # Liver_PT-21: filtered cells=1128
+
+.. code:: ipython3
+
+    # Filter Settings
+    sc.pp.filter_genes(adata6, min_cells = 10)
+    sc.pp.highly_variable_genes(adata6, n_top_genes = 3000, subset = True, flavor = 'seurat_v3')
+
+.. code:: ipython3
+
+    # Model Training
+    scvi.model.SCVI.setup_anndata(adata6)
+    vae = scvi.model.SCVI(adata6)
+    vae.train()
+
+.. code:: ipython3
+
+    # Solo Model
+    solo = scvi.external.SOLO.from_scvi_model(vae)
+    solo.train()
+    solo.predict()
+    df = solo.predict()
+    df['prediction'] = solo.predict(soft = False)
+    df
+    df.groupby('prediction').count()
+    df['dif'] = df.doublet - df.singlet
+    df
+
+.. code:: ipython3
+
+    # Doublet Prediction Plot
+    sns.displot(df[df.prediction == 'doublet'], x = 'dif')
+
+.. code:: ipython3
+
+    # Doublet Removal
+    doublets = df[(df.prediction == 'doublet') & (df.dif > 0.7)]
+    doublets
+    adata6 = sc.read_h5ad(Liver_dir/ "Liver_PT-21.h5ad")
+    adata6.obs
+    adata6.obs['doublet'] = adata6.obs.index.isin(doublets.index) 
+    adata6.obs
+    adata6 = adata6[~adata6.obs.doublet]
+    # Save the filtered AnnData object
+    adata6.write("Liver_PT-21_with_SOLO.h5ad")
+
+.. code:: ipython3
+
+    ## Sample 7
+    
+    # Liver_PT-12: filtered cells=8359
+
+.. code:: ipython3
+
+    # Filter Settings
+    sc.pp.filter_genes(adata7, min_cells = 10)
+    sc.pp.highly_variable_genes(adata7, n_top_genes = 3000, subset = True, flavor = 'seurat_v3')
+
+.. code:: ipython3
+
+    # Model Training
+    scvi.model.SCVI.setup_anndata(adata7)
+    vae = scvi.model.SCVI(adata7)
+    vae.train()
+
+.. code:: ipython3
+
+    # Solo Model
+    solo = scvi.external.SOLO.from_scvi_model(vae)
+    solo.train()
+    solo.predict()
+    df = solo.predict()
+    df['prediction'] = solo.predict(soft = False)
+    df
+    df.groupby('prediction').count()
+    df['dif'] = df.doublet - df.singlet
+    df
+
+.. code:: ipython3
+
+    # Doublet Prediction Plot
+    sns.displot(df[df.prediction == 'doublet'], x = 'dif')
+
+.. code:: ipython3
+
+    # Doublet Removal
+    doublets = df[(df.prediction == 'doublet') & (df.dif > 0.7)]
+    doublets
+    adata7 = sc.read_h5ad(Liver_dir/ "Liver_PT-12.h5ad")
+    adata7.obs
+    adata7.obs['doublet'] = adata7.obs.index.isin(doublets.index) 
+    adata7.obs
+    adata7 = adata7[~adata7.obs.doublet]
+    # Save the filtered AnnData object
+    adata7.write("Liver_PT-12_with_SOLO.h5ad")
+
+.. code:: ipython3
+
+    ## Sample 8
+    
+    # Liver_PT-16: filtered cells=9083
+
+.. code:: ipython3
+
+    # Filter Settings
+    sc.pp.filter_genes(adata8, min_cells = 10)
+    sc.pp.highly_variable_genes(adata8, n_top_genes = 3000, subset = True, flavor = 'seurat_v3')
+
+.. code:: ipython3
+
+    # Model Training
+    scvi.model.SCVI.setup_anndata(adata8)
+    vae = scvi.model.SCVI(adata8)
+    vae.train()
+
+.. code:: ipython3
+
+    # Solo Model
+    solo = scvi.external.SOLO.from_scvi_model(vae)
+    solo.train()
+    solo.predict()
+    df = solo.predict()
+    df['prediction'] = solo.predict(soft = False)
+    df
+    df.groupby('prediction').count()
+    df['dif'] = df.doublet - df.singlet
+    df
+
+.. code:: ipython3
+
+    # Doublet Prediction Plot
+    sns.displot(df[df.prediction == 'doublet'], x = 'dif')
+
+.. code:: ipython3
+
+    # Doublet Removal
+    doublets = df[(df.prediction == 'doublet') & (df.dif > 0.7)]
+    doublets
+    adata8 = sc.read_h5ad(Liver_dir/ "Liver_PT-16.h5ad")
+    adata8.obs
+    adata8.obs['doublet'] = adata8.obs.index.isin(doublets.index) 
+    adata8.obs
+    adata8 = adata8[~adata8.obs.doublet]
+    # Save the filtered AnnData object
+    adata8.write("Liver_PT-16_with_SOLO.h5ad")
+
+.. code:: ipython3
+
+    ## Sample 9
+    
+    # Liver_PT-17: filtered cells=9913
+
+.. code:: ipython3
+
+    # Filter Settings
+    sc.pp.filter_genes(adata9, min_cells = 10)
+    sc.pp.highly_variable_genes(adata9, n_top_genes = 3000, subset = True, flavor = 'seurat_v3')
+
+.. code:: ipython3
+
+    # Model Training
+    scvi.model.SCVI.setup_anndata(adata9)
+    vae = scvi.model.SCVI(adata9)
+    vae.train()
+
+.. code:: ipython3
+
+    # Solo Model
+    solo = scvi.external.SOLO.from_scvi_model(vae)
+    solo.train()
+    solo.predict()
+    df = solo.predict()
+    df['prediction'] = solo.predict(soft = False)
+    df
+    df.groupby('prediction').count()
+    df['dif'] = df.doublet - df.singlet
+    df
+
+.. code:: ipython3
+
+    # Doublet Prediction Plot
+    sns.displot(df[df.prediction == 'doublet'], x = 'dif')
+
+.. code:: ipython3
+
+    # Doublet Removal
+    doublets = df[(df.prediction == 'doublet') & (df.dif > 0.7)]
+    doublets
+    adata9 = sc.read_h5ad(Liver_dir/ "Liver_PT-17.h5ad")
+    adata9.obs
+    adata9.obs['doublet'] = adata9.obs.index.isin(doublets.index) 
+    adata9.obs
+    adata9 = adata9[~adata9.obs.doublet]
+    # Save the filtered AnnData object
+    adata9.write("Liver_PT-17_with_SOLO.h5ad")
+
+.. code:: ipython3
+
+    ## Sample 10
+    
+    # Liver_PT-20: filtered cells=9497
+
+.. code:: ipython3
+
+    # Filter Settings
+    sc.pp.filter_genes(adata10, min_cells = 10)
+    sc.pp.highly_variable_genes(adata10, n_top_genes = 3000, subset = True, flavor = 'seurat_v3')
+
+.. code:: ipython3
+
+    # Model Training
+    scvi.model.SCVI.setup_anndata(adata10)
+    vae = scvi.model.SCVI(adata10)
+    vae.train()
+
+.. code:: ipython3
+
+    # Solo Model
+    solo = scvi.external.SOLO.from_scvi_model(vae)
+    solo.train()
+    solo.predict()
+    df = solo.predict()
+    df['prediction'] = solo.predict(soft = False)
+    df
+    df.groupby('prediction').count()
+    df['dif'] = df.doublet - df.singlet
+    df
+
+.. code:: ipython3
+
+    # Doublet Prediction Plot
+    sns.displot(df[df.prediction == 'doublet'], x = 'dif')
+
+.. code:: ipython3
+
+    # Doublet Removal
+    doublets = df[(df.prediction == 'doublet') & (df.dif > 0.7)]
+    doublets
+    adata10 = sc.read_h5ad(Liver_dir/ "Liver_PT-20.h5ad")
+    adata10.obs
+    adata10.obs['doublet'] = adata10.obs.index.isin(doublets.index) 
+    adata10.obs
+    adata10 = adata10[~adata10.obs.doublet]
+    # Save the filtered AnnData object
+    adata10.write("Liver_PT-20_with_SOLO.h5ad")
+
+.. code:: ipython3
+
+    #### 
+    
+     ## END OF LIVER SAMPLES ##
+    
+     ## START OF WBC SAMPLES ##
+    
+    ####
+
+.. code:: ipython3
+
+    ## Sample 11
+    
+    # WBC_PT-2: cells = 1767
+
+.. code:: ipython3
+
+    # Filter Settings
+    sc.pp.filter_genes(adata11, min_cells = 10)
+    sc.pp.highly_variable_genes(adata11, n_top_genes = 3000, subset = True, flavor = 'seurat_v3')
+
+.. code:: ipython3
+
+    # Model Training
+    scvi.model.SCVI.setup_anndata(adata11)
+    vae = scvi.model.SCVI(adata11)
+    vae.train()
+
+.. code:: ipython3
+
+    # Solo Model
+    solo = scvi.external.SOLO.from_scvi_model(vae)
+    solo.train()
+    solo.predict()
+    df = solo.predict()
+    df['prediction'] = solo.predict(soft = False)
+    df
+    df.groupby('prediction').count()
+    df['dif'] = df.doublet - df.singlet
+    df
+
+.. code:: ipython3
+
+    # Doublet Prediction Plot
+    sns.displot(df[df.prediction == 'doublet'], x = 'dif')
+
+.. code:: ipython3
+
+    # Doublet Removal
+    doublets = df[(df.prediction == 'doublet') & (df.dif > 0.7)]
+    doublets
+    adata11 = sc.read_h5ad(WBC_dir / "WBC_PT-2.h5ad")
+    adata11.obs
+    adata11.obs['doublet'] = adata11.obs.index.isin(doublets.index) 
+    adata11.obs
+    adata11 = adata11[~adata11.obs.doublet]
+    # Save the filtered AnnData object
+    adata11.write("WBC_PT-2_with_SOLO.h5ad")
+
+.. code:: ipython3
+
+    ## Sample 12
+    
+    # WBC_PT-5: cells = 1479
+
+.. code:: ipython3
+
+    # Filter Settings
+    sc.pp.filter_genes(adata12, min_cells = 10)
+    sc.pp.highly_variable_genes(adata12, n_top_genes = 3000, subset = True, flavor = 'seurat_v3')
+
+.. code:: ipython3
+
+    # Model Training
+    scvi.model.SCVI.setup_anndata(adata12)
+    vae = scvi.model.SCVI(adata12)
+    vae.train()
+
+.. code:: ipython3
+
+    # Solo Model
+    solo = scvi.external.SOLO.from_scvi_model(vae)
+    solo.train()
+    solo.predict()
+    df = solo.predict()
+    df['prediction'] = solo.predict(soft = False)
+    df
+    df.groupby('prediction').count()
+    df['dif'] = df.doublet - df.singlet
+    df
+
+.. code:: ipython3
+
+    # Doublet Prediction Plot
+    sns.displot(df[df.prediction == 'doublet'], x = 'dif')
+
+.. code:: ipython3
+
+    # Doublet Removal
+    doublets = df[(df.prediction == 'doublet') & (df.dif > 0.7)]
+    doublets
+    adata12 = sc.read_h5ad(WBC_dir / "WBC_PT-5.h5ad")
+    adata12.obs
+    adata12.obs['doublet'] = adata12.obs.index.isin(doublets.index) 
+    adata12.obs
+    adata12 = adata12[~adata12.obs.doublet]
+    # Save the filtered AnnData object
+    adata12.write("WBC_PT-5_with_SOLO.h5ad")
+
+.. code:: ipython3
+
+    ## Sample 13
+    
+    # WBC_PT-6: cells = 2257
+
+.. code:: ipython3
+
+    # Filter Settings
+    sc.pp.filter_genes(adata13, min_cells = 10)
+    sc.pp.highly_variable_genes(adata13, n_top_genes = 3000, subset = True, flavor = 'seurat_v3')
+
+.. code:: ipython3
+
+    # Model Training
+    scvi.model.SCVI.setup_anndata(adata13)
+    vae = scvi.model.SCVI(adata13)
+    vae.train()
+
+.. code:: ipython3
+
+    # Solo Model
+    solo = scvi.external.SOLO.from_scvi_model(vae)
+    solo.train()
+    solo.predict()
+    df = solo.predict()
+    df['prediction'] = solo.predict(soft = False)
+    df
+    df.groupby('prediction').count()
+    df['dif'] = df.doublet - df.singlet
+    df
+
+.. code:: ipython3
+
+    # Doublet Prediction Plot
+    sns.displot(df[df.prediction == 'doublet'], x = 'dif')
+
+.. code:: ipython3
+
+    # Doublet Removal
+    doublets = df[(df.prediction == 'doublet') & (df.dif > 0.7)]
+    doublets
+    adata13 = sc.read_h5ad(WBC_dir / "WBC_PT-6.h5ad")
+    adata13.obs
+    adata13.obs['doublet'] = adata13.obs.index.isin(doublets.index) 
+    adata13.obs
+    adata13 = adata13[~adata13.obs.doublet]
+    # Save the filtered AnnData object
+    adata13.write("WBC_PT-6_with_SOLO.h5ad")
+
+.. code:: ipython3
+
+    ## Sample 14
+    
+    # WBC_PT-8: cells = 1284
+
+.. code:: ipython3
+
+    # Filter Settings
+    sc.pp.filter_genes(adata14, min_cells = 10)
+    sc.pp.highly_variable_genes(adata14, n_top_genes = 3000, subset = True, flavor = 'seurat_v3')
+
+.. code:: ipython3
+
+    # Model Training
+    scvi.model.SCVI.setup_anndata(adata14)
+    vae = scvi.model.SCVI(adata14)
+    vae.train()
+
+.. code:: ipython3
+
+    # Solo Model
+    solo = scvi.external.SOLO.from_scvi_model(vae)
+    solo.train()
+    solo.predict()
+    df = solo.predict()
+    df['prediction'] = solo.predict(soft = False)
+    df
+    df.groupby('prediction').count()
+    df['dif'] = df.doublet - df.singlet
+    df
+
+.. code:: ipython3
+
+    # Doublet Prediction Plot
+    sns.displot(df[df.prediction == 'doublet'], x = 'dif')
+
+.. code:: ipython3
+
+    # Doublet Removal
+    doublets = df[(df.prediction == 'doublet') & (df.dif > 0.7)]
+    doublets
+    adata14 = sc.read_h5ad(WBC_dir / "WBC_PT-8.h5ad")
+    adata14.obs
+    adata14.obs['doublet'] = adata14.obs.index.isin(doublets.index) 
+    adata14.obs
+    adata14 = adata14[~adata14.obs.doublet]
+    # Save the filtered AnnData object
+    adata14.write("WBC_PT-8_with_SOLO.h5ad")
+
+.. code:: ipython3
+
+    ## Sample 15
+    
+    # WBC_PT-10: cells = 2815
+
+.. code:: ipython3
+
+    # Filter Settings
+    sc.pp.filter_genes(adata15, min_cells = 10)
+    sc.pp.highly_variable_genes(adata15, n_top_genes = 3000, subset = True, flavor = 'seurat_v3')
+
+.. code:: ipython3
+
+    # Model Training
+    scvi.model.SCVI.setup_anndata(adata15)
+    vae = scvi.model.SCVI(adata15)
+    vae.train()
+
+.. code:: ipython3
+
+    # Solo Model
+    solo = scvi.external.SOLO.from_scvi_model(vae)
+    solo.train()
+    solo.predict()
+    df = solo.predict()
+    df['prediction'] = solo.predict(soft = False)
+    df
+    df.groupby('prediction').count()
+    df['dif'] = df.doublet - df.singlet
+    df
+
+.. code:: ipython3
+
+    # Doublet Prediction Plot
+    sns.displot(df[df.prediction == 'doublet'], x = 'dif')
+
+.. code:: ipython3
+
+    # Doublet Removal
+    doublets = df[(df.prediction == 'doublet') & (df.dif > 0.7)]
+    doublets
+    adata15 = sc.read_h5ad(WBC_dir / "WBC_PT-10.h5ad")
+    adata15.obs
+    adata15.obs['doublet'] = adata15.obs.index.isin(doublets.index) 
+    adata15.obs
+    adata15 = adata15[~adata15.obs.doublet]
+    # Save the filtered AnnData object
+    adata15.write("WBC_PT-10_with_SOLO.h5ad")
+
+.. code:: ipython3
+
+    ## Sample 16
+    
+    # WBC_PT-13: cells = 1584
+
+.. code:: ipython3
+
+    # Filter Settings
+    sc.pp.filter_genes(adata16, min_cells = 10)
+    sc.pp.highly_variable_genes(adata16, n_top_genes = 3000, subset = True, flavor = 'seurat_v3')
+
+.. code:: ipython3
+
+    # Model Training
+    scvi.model.SCVI.setup_anndata(adata16)
+    vae = scvi.model.SCVI(adata16)
+    vae.train()
+
+.. code:: ipython3
+
+    # Solo Model
+    solo = scvi.external.SOLO.from_scvi_model(vae)
+    solo.train()
+    solo.predict()
+    df = solo.predict()
+    df['prediction'] = solo.predict(soft = False)
+    df
+    df.groupby('prediction').count()
+    df['dif'] = df.doublet - df.singlet
+    df
+
+.. code:: ipython3
+
+    # Doublet Prediction Plot
+    sns.displot(df[df.prediction == 'doublet'], x = 'dif')
+
+.. code:: ipython3
+
+    # Doublet Removal
+    doublets = df[(df.prediction == 'doublet') & (df.dif > 0.7)]
+    doublets
+    adata16 = sc.read_h5ad(WBC_dir / "WBC_PT-13.h5ad")
+    adata16.obs
+    adata16.obs['doublet'] = adata16.obs.index.isin(doublets.index) 
+    adata16.obs
+    adata16 = adata16[~adata16.obs.doublet]
+    # Save the filtered AnnData object
+    adata16.write("WBC_PT-13_with_SOLO.h5ad")
+
+.. code:: ipython3
+
+    ## Sample 17
+    
+    # WBC_PT-14: cells = 2515
+
+.. code:: ipython3
+
+    # Filter Settings
+    sc.pp.filter_genes(adata17, min_cells = 10)
+    sc.pp.highly_variable_genes(adata17, n_top_genes = 3000, subset = True, flavor = 'seurat_v3')
+
+.. code:: ipython3
+
+    # Model Training
+    scvi.model.SCVI.setup_anndata(adata17)
+    vae = scvi.model.SCVI(adata17)
+    vae.train()
+
+.. code:: ipython3
+
+    # Solo Model
+    solo = scvi.external.SOLO.from_scvi_model(vae)
+    solo.train()
+    solo.predict()
+    df = solo.predict()
+    df['prediction'] = solo.predict(soft = False)
+    df
+    df.groupby('prediction').count()
+    df['dif'] = df.doublet - df.singlet
+    df
+
+.. code:: ipython3
+
+    # Doublet Prediction Plot
+    sns.displot(df[df.prediction == 'doublet'], x = 'dif')
+
+.. code:: ipython3
+
+    # Doublet Removal
+    doublets = df[(df.prediction == 'doublet') & (df.dif > 0.7)]
+    doublets
+    adata17 = sc.read_h5ad(WBC_dir / "WBC_PT-14.h5ad")
+    adata17.obs
+    adata17.obs['doublet'] = adata17.obs.index.isin(doublets.index) 
+    adata17.obs
+    adata17 = adata17[~adata17.obs.doublet]
+    # Save the filtered AnnData object
+    adata17.write("WBC_PT-14_with_SOLO.h5ad")
+
+.. code:: ipython3
+
+    ## Sample 18
+    
+    # WBC_PT-15: cells = 3252
+
+.. code:: ipython3
+
+    # Filter Settings
+    sc.pp.filter_genes(adata18, min_cells = 10)
+    sc.pp.highly_variable_genes(adata18, n_top_genes = 3000, subset = True, flavor = 'seurat_v3')
+
+.. code:: ipython3
+
+    # Model Training
+    scvi.model.SCVI.setup_anndata(adata18)
+    vae = scvi.model.SCVI(adata18)
+    vae.train()
+
+.. code:: ipython3
+
+    # Solo Model
+    solo = scvi.external.SOLO.from_scvi_model(vae)
+    solo.train()
+    solo.predict()
+    df = solo.predict()
+    df['prediction'] = solo.predict(soft = False)
+    df
+    df.groupby('prediction').count()
+    df['dif'] = df.doublet - df.singlet
+    df
+
+.. code:: ipython3
+
+    # Doublet Prediction Plot
+    sns.displot(df[df.prediction == 'doublet'], x = 'dif')
+
+.. code:: ipython3
+
+    # Doublet Removal
+    doublets = df[(df.prediction == 'doublet') & (df.dif > 0.2)]
+    doublets
+    adata18 = sc.read_h5ad(WBC_dir / "WBC_PT-15.h5ad")
+    adata18.obs
+    adata18.obs['doublet'] = adata18.obs.index.isin(doublets.index) 
+    adata18.obs
+    adata18 = adata18[~adata18.obs.doublet]
+    # Save the filtered AnnData object
+    adata18.write("WBC_PT-15_with_SOLO.h5ad")
+
+.. code:: ipython3
+
+    ## Sample 19
+    
+    # WBC_PT-36: cells = 566
+
+.. code:: ipython3
+
+    # Filter Settings
+    sc.pp.filter_genes(adata19, min_cells = 10)
+    sc.pp.highly_variable_genes(adata19, n_top_genes = 3000, subset = True, flavor = 'seurat_v3')
+
+.. code:: ipython3
+
+    # Model Training
+    scvi.model.SCVI.setup_anndata(adata19)
+    vae = scvi.model.SCVI(adata19)
+    vae.train()
+
+.. code:: ipython3
+
+    # Solo Model
+    solo = scvi.external.SOLO.from_scvi_model(vae)
+    solo.train()
+    solo.predict()
+    df = solo.predict()
+    df['prediction'] = solo.predict(soft = False)
+    df
+    df.groupby('prediction').count()
+    df['dif'] = df.doublet - df.singlet
+    df
+
+.. code:: ipython3
+
+    # Doublet Prediction Plot
+    sns.displot(df[df.prediction == 'doublet'], x = 'dif')
+
+.. code:: ipython3
+
+    # Doublet Removal
+    doublets = df[(df.prediction == 'doublet') & (df.dif > 0.7)]
+    doublets
+    adata19 = sc.read_h5ad(WBC_dir / "WBC_PT-36.h5ad")
+    adata19.obs
+    adata19.obs['doublet'] = adata19.obs.index.isin(doublets.index) 
+    adata19.obs
+    adata19 = adata19[~adata19.obs.doublet]
+    # Save the filtered AnnData object
+    adata19.write("WBC_PT-36_with_SOLO.h5ad")
+
+.. code:: ipython3
+
+    ## Sample 20
+    
+    # WBC_CT-1: cells = 3252
+
+.. code:: ipython3
+
+    # Filter Settings
+    sc.pp.filter_genes(adata20, min_cells = 10)
+    sc.pp.highly_variable_genes(adata20, n_top_genes = 3000, subset = True, flavor = 'seurat_v3')
+
+.. code:: ipython3
+
+    # Model Training
+    scvi.model.SCVI.setup_anndata(adata20)
+    vae = scvi.model.SCVI(adata20)
+    vae.train()
+
+.. code:: ipython3
+
+    # Solo Model
+    solo = scvi.external.SOLO.from_scvi_model(vae)
+    solo.train()
+    solo.predict()
+    df = solo.predict()
+    df['prediction'] = solo.predict(soft = False)
+    df
+    df.groupby('prediction').count()
+    df['dif'] = df.doublet - df.singlet
+    df
+
+.. code:: ipython3
+
+    # Doublet Prediction Plot
+    sns.displot(df[df.prediction == 'doublet'], x = 'dif')
+
+.. code:: ipython3
+
+    # Doublet Removal
+    doublets = df[(df.prediction == 'doublet') & (df.dif > 0.7)]
+    doublets
+    adata20 = sc.read_h5ad(WBC_dir / "WBC_CT-1.h5ad")
+    adata20.obs
+    adata20.obs['doublet'] = adata20.obs.index.isin(doublets.index) 
+    adata20.obs
+    adata20 = adata20[~adata20.obs.doublet]
+    # Save the filtered AnnData object
+    adata20.write("WBC_CT-1_with_SOLO.h5ad")
+
+.. code:: ipython3
+
+    ## Sample 21
+    
+    # WBC_CT-2: cells = 2208
+
+.. code:: ipython3
+
+    # Filter Settings
+    sc.pp.filter_genes(adata21, min_cells = 10)
+    sc.pp.highly_variable_genes(adata21, n_top_genes = 3000, subset = True, flavor = 'seurat_v3')
+
+.. code:: ipython3
+
+    # Model Training
+    scvi.model.SCVI.setup_anndata(adata21)
+    vae = scvi.model.SCVI(adata21)
+    vae.train()
+
+.. code:: ipython3
+
+    # Solo Model
+    solo = scvi.external.SOLO.from_scvi_model(vae)
+    solo.train()
+    solo.predict()
+    df = solo.predict()
+    df['prediction'] = solo.predict(soft = False)
+    df
+    df.groupby('prediction').count()
+    df['dif'] = df.doublet - df.singlet
+    df
+
+.. code:: ipython3
+
+    # Doublet Prediction Plot
+    sns.displot(df[df.prediction == 'doublet'], x = 'dif')
+
+.. code:: ipython3
+
+    # Doublet Removal
+    doublets = df[(df.prediction == 'doublet') & (df.dif > 0.7)]
+    doublets
+    adata21 = sc.read_h5ad(WBC_dir / "WBC_CT-2.h5ad")
+    adata21.obs
+    adata21.obs['doublet'] = adata21.obs.index.isin(doublets.index) 
+    adata21.obs
+    adata21 = adata21[~adata21.obs.doublet]
+    # Save the filtered AnnData object
+    adata21.write("WBC_CT-2_with_SOLO.h5ad")
+
+.. code:: ipython3
+
+    ## Sample 22
+    
+    # WBC_CT-3: cells = 1468
+
+.. code:: ipython3
+
+    # Filter Settings
+    sc.pp.filter_genes(adata22, min_cells = 10)
+    sc.pp.highly_variable_genes(adata22, n_top_genes = 3000, subset = True, flavor = 'seurat_v3')
+
+.. code:: ipython3
+
+    # Model Training
+    scvi.model.SCVI.setup_anndata(adata22)
+    vae = scvi.model.SCVI(adata22)
+    vae.train()
+
+.. code:: ipython3
+
+    # Solo Model
+    solo = scvi.external.SOLO.from_scvi_model(vae)
+    solo.train()
+    solo.predict()
+    df = solo.predict()
+    df['prediction'] = solo.predict(soft = False)
+    df
+    df.groupby('prediction').count()
+    df['dif'] = df.doublet - df.singlet
+    df
+
+.. code:: ipython3
+
+    # Doublet Prediction Plot
+    sns.displot(df[df.prediction == 'doublet'], x = 'dif')
+
+.. code:: ipython3
+
+    # Doublet Removal
+    doublets = df[(df.prediction == 'doublet') & (df.dif > 0.7)]
+    doublets
+    adata22 = sc.read_h5ad(WBC_dir / "WBC_CT-3.h5ad")
+    adata22.obs
+    adata22.obs['doublet'] = adata22.obs.index.isin(doublets.index) 
+    adata22.obs
+    adata22 = adata22[~adata22.obs.doublet]
+    # Save the filtered AnnData object
+    adata22.write("WBC_CT-3_with_SOLO.h5ad")
+
+.. code:: ipython3
+
+    ## Sample 23
+    
+    # WBC_CT-4: cells = 2058
+
+.. code:: ipython3
+
+    # Filter Settings
+    sc.pp.filter_genes(adata23, min_cells = 10)
+    sc.pp.highly_variable_genes(adata23, n_top_genes = 3000, subset = True, flavor = 'seurat_v3')
+
+.. code:: ipython3
+
+    # Model Training
+    scvi.model.SCVI.setup_anndata(adata23)
+    vae = scvi.model.SCVI(adata23)
+    vae.train()
+
+.. code:: ipython3
+
+    # Solo Model
+    solo = scvi.external.SOLO.from_scvi_model(vae)
+    solo.train()
+    solo.predict()
+    df = solo.predict()
+    df['prediction'] = solo.predict(soft = False)
+    df
+    df.groupby('prediction').count()
+    df['dif'] = df.doublet - df.singlet
+    df
+
+.. code:: ipython3
+
+    # Doublet Prediction Plot
+    sns.displot(df[df.prediction == 'doublet'], x = 'dif')
+
+.. code:: ipython3
+
+    # Doublet Removal
+    doublets = df[(df.prediction == 'doublet') & (df.dif > 0.7)]
+    doublets
+    adata23 = sc.read_h5ad(WBC_dir / "WBC_CT-4.h5ad")
+    adata23.obs
+    adata23.obs['doublet'] = adata23.obs.index.isin(doublets.index) 
+    adata23.obs
+    adata23 = adata23[~adata23.obs.doublet]
+    # Save the filtered AnnData object
+    adata23.write("WBC_CT-4_with_SOLO.h5ad")
+
+.. code:: ipython3
+
+    ## Sample 24
+    
+    # WBC_CT-5: cells = 1401
+
+.. code:: ipython3
+
+    # Filter Settings
+    sc.pp.filter_genes(adata24, min_cells = 10)
+    sc.pp.highly_variable_genes(adata24, n_top_genes = 3000, subset = True, flavor = 'seurat_v3')
+
+.. code:: ipython3
+
+    # Model Training
+    scvi.model.SCVI.setup_anndata(adata24)
+    vae = scvi.model.SCVI(adata24)
+    vae.train()
+
+.. code:: ipython3
+
+    # Solo Model
+    solo = scvi.external.SOLO.from_scvi_model(vae)
+    solo.train()
+    solo.predict()
+    df = solo.predict()
+    df['prediction'] = solo.predict(soft = False)
+    df
+    df.groupby('prediction').count()
+    df['dif'] = df.doublet - df.singlet
+    df
+
+.. code:: ipython3
+
+    # Doublet Prediction Plot
+    sns.displot(df[df.prediction == 'doublet'], x = 'dif')
+
+.. code:: ipython3
+
+    # Doublet Removal
+    doublets = df[(df.prediction == 'doublet') & (df.dif > 0.7)]
+    doublets
+    adata24 = sc.read_h5ad(WBC_dir / "WBC_CT-5.h5ad")
+    adata24.obs
+    adata24.obs['doublet'] = adata24.obs.index.isin(doublets.index) 
+    adata24.obs
+    adata24 = adata24[~adata24.obs.doublet]
+    # Save the filtered AnnData object
+    adata24.write("WBC_CT-5_with_SOLO.h5ad")
+
+.. code:: ipython3
+
+    ## Sample 25
+    
+    # WBC_CT-9: cells = 1984
+
+.. code:: ipython3
+
+    # Filter Settings
+    sc.pp.filter_genes(adata25, min_cells = 10)
+    sc.pp.highly_variable_genes(adata25, n_top_genes = 3000, subset = True, flavor = 'seurat_v3')
+
+.. code:: ipython3
+
+    # Model Training
+    scvi.model.SCVI.setup_anndata(adata25)
+    vae = scvi.model.SCVI(adata25)
+    vae.train()
+
+.. code:: ipython3
+
+    # Solo Model
+    solo = scvi.external.SOLO.from_scvi_model(vae)
+    solo.train()
+    solo.predict()
+    df = solo.predict()
+    df['prediction'] = solo.predict(soft = False)
+    df
+    df.groupby('prediction').count()
+    df['dif'] = df.doublet - df.singlet
+    df
+
+.. code:: ipython3
+
+    # Doublet Prediction Plot
+    sns.displot(df[df.prediction == 'doublet'], x = 'dif')
+
+.. code:: ipython3
+
+    # Doublet Removal
+    doublets = df[(df.prediction == 'doublet') & (df.dif > 0.7)]
+    doublets
+    adata25 = sc.read_h5ad(WBC_dir / "WBC_CT-9.h5ad")
+    adata25.obs
+    adata25.obs['doublet'] = adata25.obs.index.isin(doublets.index) 
+    adata25.obs
+    adata25 = adata25[~adata25.obs.doublet]
+    # Save the filtered AnnData object
+    adata25.write("WBC_CT-9_with_SOLO.h5ad")
+
+.. code:: ipython3
+
+    # -------------------------------
+    # Step 4.5: Create SOLO folders + copy .h5ad files into them
+    # -------------------------------
+    import os
+    import shutil
+    from pathlib import Path
+    
+    # Your working directory
+    base_dir = Path("/home/tsaliu")
+    
+    liver_dir = base_dir / "SOLO Liver Samples"
+    wbc_dir   = base_dir / "SOLO WBC Samples"
+    
+    # Create folders (no error if they already exist)
+    liver_dir.mkdir(parents=True, exist_ok=True)
+    wbc_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Filenames from Step 5
+    liver_files = [
+        "Liver_PT-5_with_SOLO.h5ad",
+        "Liver_PT-9_with_SOLO.h5ad",
+        "Liver_PT-11_with_SOLO.h5ad",
+        "Liver_PT-8_with_SOLO.h5ad",
+        "Liver_PT-19_with_SOLO.h5ad",
+        "Liver_PT-21_with_SOLO.h5ad",
+        "Liver_PT-12_with_SOLO.h5ad",
+        "Liver_PT-16_with_SOLO.h5ad",
+        "Liver_PT-17_with_SOLO.h5ad",
+        "Liver_PT-20_with_SOLO.h5ad",
+    ]
+    
+    wbc_files = [
+        "WBC_PT-2_with_SOLO.h5ad",
+        "WBC_PT-5_with_SOLO.h5ad",
+        "WBC_PT-6_with_SOLO.h5ad",
+        "WBC_PT-8_with_SOLO.h5ad",
+        "WBC_PT-10_with_SOLO.h5ad",
+        "WBC_PT-13_with_SOLO.h5ad",
+        "WBC_PT-14_with_SOLO.h5ad",
+        "WBC_PT-15_with_SOLO.h5ad",
+        "WBC_PT-36_with_SOLO.h5ad",
+        "WBC_CT-1_with_SOLO.h5ad",
+        "WBC_CT-2_with_SOLO.h5ad",
+        "WBC_CT-3_with_SOLO.h5ad",
+        "WBC_CT-4_with_SOLO.h5ad",
+        "WBC_CT-5_with_SOLO.h5ad",
+        "WBC_CT-9_with_SOLO.h5ad",
+    ]
+    
+    def copy_files(file_list, dest_dir):
+        missing = []
+        for fname in file_list:
+            src = base_dir / fname
+            dst = dest_dir / fname
+            if src.exists():
+                shutil.copy2(src, dst)  # preserves metadata; overwrites if exists
+            else:
+                missing.append(str(src))
+        if missing:
+            print("Missing files (not copied):")
+            for m in missing:
+                print("  -", m)
+    
+    copy_files(liver_files, liver_dir)
+    copy_files(wbc_files, wbc_dir)
+    
+    print("Done.")
+    print("Liver folder:", liver_dir)
+    print("WBC folder:", wbc_dir)
+
+.. code:: ipython3
+
+    # -------------------------------
+    # Step 5: Load each sample's data one by one
+    # -------------------------------
+    
+    from pathlib import Path
+    
+    base_dir = Path("/home/tsaliu")
+    liver_dir = base_dir / "SOLO Liver Samples"
+    wbc_dir   = base_dir / "SOLO WBC Samples"
+    
+    # Borderline NASH Patients
+    adata1 = sc.read_h5ad(liver_dir / "Liver_PT-5_with_SOLO.h5ad")
+    adata2 = sc.read_h5ad(liver_dir / "Liver_PT-9_with_SOLO.h5ad")
+    adata3 = sc.read_h5ad(liver_dir / "Liver_PT-11_with_SOLO.h5ad")
+    
+    # NASH Patients
+    adata4 = sc.read_h5ad(liver_dir / "Liver_PT-8_with_SOLO.h5ad")
+    adata5 = sc.read_h5ad(liver_dir / "Liver_PT-19_with_SOLO.h5ad")
+    adata6 = sc.read_h5ad(liver_dir / "Liver_PT-21_with_SOLO.h5ad")
+    
+    # Controls / Healthy Liver
+    adata7  = sc.read_h5ad(liver_dir / "Liver_PT-12_with_SOLO.h5ad")
+    adata8  = sc.read_h5ad(liver_dir / "Liver_PT-16_with_SOLO.h5ad")
+    adata9  = sc.read_h5ad(liver_dir / "Liver_PT-17_with_SOLO.h5ad")
+    adata10 = sc.read_h5ad(liver_dir / "Liver_PT-20_with_SOLO.h5ad")
+    
+    # WBC Patients
+    adata11 = sc.read_h5ad(wbc_dir / "WBC_PT-2_with_SOLO.h5ad")
+    adata12 = sc.read_h5ad(wbc_dir / "WBC_PT-5_with_SOLO.h5ad")
+    adata13 = sc.read_h5ad(wbc_dir / "WBC_PT-6_with_SOLO.h5ad")   
+    adata14 = sc.read_h5ad(wbc_dir / "WBC_PT-8_with_SOLO.h5ad")
+    adata15 = sc.read_h5ad(wbc_dir / "WBC_PT-10_with_SOLO.h5ad")
+    adata16 = sc.read_h5ad(wbc_dir / "WBC_PT-13_with_SOLO.h5ad")
+    adata17 = sc.read_h5ad(wbc_dir / "WBC_PT-14_with_SOLO.h5ad")
+    adata18 = sc.read_h5ad(wbc_dir / "WBC_PT-15_with_SOLO.h5ad")
+    adata19 = sc.read_h5ad(wbc_dir / "WBC_PT-36_with_SOLO.h5ad")
+    
+    # WBC Controls
+    adata20 = sc.read_h5ad(wbc_dir / "WBC_CT-1_with_SOLO.h5ad")
+    adata21 = sc.read_h5ad(wbc_dir / "WBC_CT-2_with_SOLO.h5ad")
+    adata22 = sc.read_h5ad(wbc_dir / "WBC_CT-3_with_SOLO.h5ad")
+    adata23 = sc.read_h5ad(wbc_dir / "WBC_CT-4_with_SOLO.h5ad")
+    adata24 = sc.read_h5ad(wbc_dir / "WBC_CT-5_with_SOLO.h5ad")
+    adata25 = sc.read_h5ad(wbc_dir / "WBC_CT-9_with_SOLO.h5ad")
+
+.. code:: ipython3
+
+    # -------------------------------
+    # Step 6: Make variable names unique
+    # -------------------------------
+    for adata in [adata1, adata2, adata3, adata4, adata5, adata6, adata7, adata8, adata9, adata10,
+                  adata11, adata12, adata13, adata14, adata15, adata16, adata17, adata18, adata19, adata20,
+                  adata21, adata22, adata23, adata24, adata25]:
+        adata.var_names_make_unique()
+        adata.raw = adata
+
+.. code:: ipython3
+
+    # -------------------------------
+    # Step 7: Quality Control (QC); remove cells with <200 genes
+    # -------------------------------
+    
+    for adata in [adata1, adata2, adata3, adata4, adata5, adata6, adata7, adata8, adata9, adata10,
+                  adata11, adata12, adata13, adata14, adata15, adata16, adata17, adata18, adata19, adata20,
+                  adata21, adata22, adata23, adata24, adata25]:
+        sc.pp.filter_cells(adata, min_genes=200)  # get rid of cells with fewer than 200 genes
+
+.. code:: ipython3
+
+    # -------------------------------
+    # Quick Check: Number of cells in each adata
+    # -------------------------------
+    
+    for i, adata in enumerate(
+        [adata1, adata2, adata3, adata4, adata5, adata6, adata7, adata8, adata9, adata10,
+         adata11, adata12, adata13, adata14, adata15, adata16, adata17, adata18, adata19, adata20,
+         adata21, adata22, adata23, adata24, adata25],
+        start=1
+    ):
+        n_cells = adata.n_obs
+        print(f"Number of cells in adata{i}: {n_cells}")
+
+.. code:: ipython3
+
+    # -------------------------------
+    # Step 8: Gene annotation
+    # -------------------------------
+    
+    # ----------
+    # Step 8.1: Annotate mitochondrial genes for all 25 datasets (human-style: "MT-")
+    # ----------
+    
+    for adata in [adata1, adata2, adata3, adata4, adata5, adata6, adata7, adata8, adata9, adata10,
+                  adata11, adata12, adata13, adata14, adata15, adata16, adata17, adata18, adata19, adata20,
+                  adata21, adata22, adata23, adata24, adata25]:
+        adata.var["mt"] = adata.var_names.str.startswith("MT-")
+    
+    # ----------
+    # Verify on adata4 and adata 15
+    # ----------
+    print("mt genes (adata4):", int(adata4.var["mt"].sum()))
+    print("Example mt genes:", adata4.var_names[adata4.var["mt"]][:20].tolist())
+    
+    print("mt genes (adata15):", int(adata15.var["mt"].sum()))
+    print("Example mt genes:", adata15.var_names[adata15.var["mt"]][:20].tolist())
+    
+    # ----------
+    # Step 8.1: Annotate hemoglobin genes for all 25 datasets (human-style: HBA*, HBB, HBG*, etc.)
+    # ----------
+    
+    for adata in [adata1, adata2, adata3, adata4, adata5, adata6, adata7, adata8, adata9, adata10,
+                  adata11, adata12, adata13, adata14, adata15, adata16, adata17, adata18, adata19, adata20,
+                  adata21, adata22, adata23, adata24, adata25]:
+        adata.var["hb"] = adata.var_names.str.contains(r"^HB[ABDEGMQZ]", regex=True)
+    
+    # ----------
+    # Verify on adata4 and adata15
+    # ----------
+    print("hb genes (adata4):", int(adata4.var["hb"].sum()))
+    print("Example hb genes:", adata4.var_names[adata4.var["hb"]][:30].tolist())
+    
+    print("hb genes (adata15):", int(adata15.var["hb"].sum()))
+    print("Example hb genes:", adata15.var_names[adata15.var["hb"]][:30].tolist())
+
+.. code:: ipython3
+
+    # -------------------------------
+    # Step 9: QC; Violin Plots & Filtering
+    # -------------------------------
+
+.. code:: ipython3
+
+    # Violin Plots
+    
+    import numpy as np
+    import scanpy as sc
+    import matplotlib.pyplot as plt
+    
+    # Put your objects in a dict so you have stable, explicit labels
+    adatas = {f"adata{i}": globals()[f"adata{i}"] for i in range(1, 26)}
+    
+    qc_keys = ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_hb']
+    
+    for name, ad in adatas.items():
+        sc.pp.calculate_qc_metrics(ad, qc_vars=['mt', 'hb'], percent_top=None, log1p=False, inplace=True)
+    
+        # Make plot but don't render yet
+        sc.pl.violin(ad, qc_keys, jitter=0.4, multi_panel=True, show=False)
+        fig = plt.gcf()  # current figure created by scanpy
+    
+        # Add sample label
+        fig.suptitle(name, y=1.02)  # y>1 lifts it above panels
+        fig.tight_layout()
+    
+        # Now show (or save) and move on
+        plt.show()
+    
+        # Compute cutoffs (store/print as you like)
+        upper_lim = np.quantile(ad.obs['n_genes_by_counts'].to_numpy(), 0.98)
+        lower_lim = np.quantile(ad.obs['n_genes_by_counts'].to_numpy(), 0.02)
+        print(f"{name}: {lower_lim} to {upper_lim}")
+
+.. code:: ipython3
+
+    # -------------------------------
+    # Optional: Write all plots to one PDF
+    # -------------------------------
+    
+    from matplotlib.backends.backend_pdf import PdfPages
+    
+    with PdfPages("qc_violin_all_samples.pdf") as pdf:
+        for name, ad in adatas.items():
+            sc.pp.calculate_qc_metrics(ad, qc_vars=['mt', 'hb'], percent_top=None, log1p=False, inplace=True)
+    
+            sc.pl.violin(ad, qc_keys, jitter=0.4, multi_panel=True, show=False)
+            fig = plt.gcf()
+            fig.suptitle(name, y=1.02)
+            fig.tight_layout()
+    
+            pdf.savefig(fig)
+            plt.close(fig)
+
+
+.. code:: ipython3
+
+    # -------------------------
+    # adata1
+    # -------------------------
+    sc.pp.calculate_qc_metrics(adata1, qc_vars=['mt', 'hb'], percent_top=None, log1p=False, inplace=True)
+    sc.pl.violin(adata1, ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_hb'],
+                 jitter=0.4, multi_panel=True)
+    
+    upper_lim = np.quantile(adata1.obs.n_genes_by_counts.values, .98)
+    lower_lim = np.quantile(adata1.obs.n_genes_by_counts.values, .02)
+    print(f'{lower_lim} to {upper_lim}')
+    adata1 = adata1[(adata1.obs.n_genes_by_counts < upper_lim) & (adata1.obs.n_genes_by_counts > lower_lim)]
+    adata1 = adata1[adata1.obs.pct_counts_mt < 10]
+    adata1 = adata1[adata1.obs['pct_counts_hb'] < 0.1].copy()
+    
+    sc.pl.violin(adata1, ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_hb'],
+                 jitter=0.4, multi_panel=True)
+    
+    # -------------------------
+    # adata2
+    # -------------------------
+    sc.pp.calculate_qc_metrics(adata2, qc_vars=['mt', 'hb'], percent_top=None, log1p=False, inplace=True)
+    sc.pl.violin(adata2, ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_hb'],
+                 jitter=0.4, multi_panel=True)
+    
+    upper_lim = np.quantile(adata2.obs.n_genes_by_counts.values, .98)
+    lower_lim = np.quantile(adata2.obs.n_genes_by_counts.values, .02)
+    print(f'{lower_lim} to {upper_lim}')
+    adata2 = adata2[(adata2.obs.n_genes_by_counts < upper_lim) & (adata2.obs.n_genes_by_counts > lower_lim)]
+    adata2 = adata2[adata2.obs.pct_counts_mt < 10] # changed from 5 to 10
+    adata2 = adata2[adata2.obs['pct_counts_hb'] < 0.1].copy()
+    
+    sc.pl.violin(adata2, ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_hb'],
+                 jitter=0.4, multi_panel=True)
+    
+    # -------------------------
+    # adata3
+    # -------------------------
+    sc.pp.calculate_qc_metrics(adata3, qc_vars=['mt', 'hb'], percent_top=None, log1p=False, inplace=True)
+    sc.pl.violin(adata3, ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_hb'],
+                 jitter=0.4, multi_panel=True)
+    
+    upper_lim = np.quantile(adata3.obs.n_genes_by_counts.values, .98)
+    lower_lim = np.quantile(adata3.obs.n_genes_by_counts.values, .02)
+    print(f'{lower_lim} to {upper_lim}')
+    adata3 = adata3[(adata3.obs.n_genes_by_counts < upper_lim) & (adata3.obs.n_genes_by_counts > lower_lim)]
+    adata3 = adata3[adata3.obs.pct_counts_mt < 12] # changed from 10 to 12
+    adata3 = adata3[adata3.obs['pct_counts_hb'] < 0.1].copy()
+    
+    sc.pl.violin(adata3, ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_hb'],
+                 jitter=0.4, multi_panel=True)
+    
+    # -------------------------
+    # adata4
+    # -------------------------
+    sc.pp.calculate_qc_metrics(adata4, qc_vars=['mt', 'hb'], percent_top=None, log1p=False, inplace=True)
+    sc.pl.violin(adata4, ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_hb'],
+                 jitter=0.4, multi_panel=True)
+    
+    upper_lim = np.quantile(adata4.obs.n_genes_by_counts.values, .98)
+    lower_lim = np.quantile(adata4.obs.n_genes_by_counts.values, .02)
+    print(f'{lower_lim} to {upper_lim}')
+    adata4 = adata4[(adata4.obs.n_genes_by_counts < upper_lim) & (adata4.obs.n_genes_by_counts > lower_lim)]
+    adata4 = adata4[adata4.obs.pct_counts_mt < 7] # changed from 5 to 7
+    adata4 = adata4[adata4.obs['pct_counts_hb'] < 0.1].copy()
+    
+    sc.pl.violin(adata4, ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_hb'],
+                 jitter=0.4, multi_panel=True)
+    
+    # -------------------------
+    # adata5
+    # -------------------------
+    sc.pp.calculate_qc_metrics(adata5, qc_vars=['mt', 'hb'], percent_top=None, log1p=False, inplace=True)
+    sc.pl.violin(adata5, ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_hb'],
+                 jitter=0.4, multi_panel=True)
+    
+    upper_lim = np.quantile(adata5.obs.n_genes_by_counts.values, .98)
+    lower_lim = np.quantile(adata5.obs.n_genes_by_counts.values, .02)
+    print(f'{lower_lim} to {upper_lim}')
+    adata5 = adata5[(adata5.obs.n_genes_by_counts < upper_lim) & (adata5.obs.n_genes_by_counts > lower_lim)]
+    adata5 = adata5[adata5.obs.pct_counts_mt < 10]
+    adata5 = adata5[adata5.obs['pct_counts_hb'] < 0.1].copy()
+    
+    sc.pl.violin(adata5, ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_hb'],
+                 jitter=0.4, multi_panel=True)
+    
+    # -------------------------
+    # adata6
+    # -------------------------
+    sc.pp.calculate_qc_metrics(adata6, qc_vars=['mt', 'hb'], percent_top=None, log1p=False, inplace=True)
+    sc.pl.violin(adata6, ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_hb'],
+                 jitter=0.4, multi_panel=True)
+    
+    upper_lim = np.quantile(adata6.obs.n_genes_by_counts.values, .98)
+    lower_lim = np.quantile(adata6.obs.n_genes_by_counts.values, .02)
+    print(f'{lower_lim} to {upper_lim}')
+    adata6 = adata6[(adata6.obs.n_genes_by_counts < upper_lim) & (adata6.obs.n_genes_by_counts > lower_lim)]
+    adata6 = adata6[adata6.obs.pct_counts_mt < 5]
+    adata6 = adata6[adata6.obs['pct_counts_hb'] < 0.1].copy()
+    
+    sc.pl.violin(adata6, ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_hb'],
+                 jitter=0.4, multi_panel=True)
+    
+    # -------------------------
+    # adata7
+    # -------------------------
+    sc.pp.calculate_qc_metrics(adata7, qc_vars=['mt', 'hb'], percent_top=None, log1p=False, inplace=True)
+    sc.pl.violin(adata7, ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_hb'],
+                 jitter=0.4, multi_panel=True)
+    
+    upper_lim = np.quantile(adata7.obs.n_genes_by_counts.values, .98)
+    lower_lim = np.quantile(adata7.obs.n_genes_by_counts.values, .02)
+    print(f'{lower_lim} to {upper_lim}')
+    adata7 = adata7[(adata7.obs.n_genes_by_counts < upper_lim) & (adata7.obs.n_genes_by_counts > lower_lim)]
+    adata7 = adata7[adata7.obs.pct_counts_mt < 11] # changed from 10 to 11
+    adata7 = adata7[adata7.obs['pct_counts_hb'] < 0.1].copy()
+    
+    sc.pl.violin(adata7, ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_hb'],
+                 jitter=0.4, multi_panel=True)
+    
+    # -------------------------
+    # adata8
+    # -------------------------
+    sc.pp.calculate_qc_metrics(adata8, qc_vars=['mt', 'hb'], percent_top=None, log1p=False, inplace=True)
+    sc.pl.violin(adata8, ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_hb'],
+                 jitter=0.4, multi_panel=True)
+    
+    upper_lim = np.quantile(adata8.obs.n_genes_by_counts.values, .98)
+    lower_lim = np.quantile(adata8.obs.n_genes_by_counts.values, .02)
+    print(f'{lower_lim} to {upper_lim}')
+    adata8 = adata8[(adata8.obs.n_genes_by_counts < upper_lim) & (adata8.obs.n_genes_by_counts > lower_lim)]
+    adata8 = adata8[adata8.obs.pct_counts_mt < 10] # changed from 5 to 10
+    adata8 = adata8[adata8.obs['pct_counts_hb'] < 0.1].copy() 
+    
+    sc.pl.violin(adata8, ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_hb'],
+                 jitter=0.4, multi_panel=True)
+    
+    # -------------------------
+    # adata9
+    # -------------------------
+    sc.pp.calculate_qc_metrics(adata9, qc_vars=['mt', 'hb'], percent_top=None, log1p=False, inplace=True)
+    sc.pl.violin(adata9, ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_hb'],
+                 jitter=0.4, multi_panel=True)
+    
+    upper_lim = np.quantile(adata9.obs.n_genes_by_counts.values, .98)
+    lower_lim = np.quantile(adata9.obs.n_genes_by_counts.values, .02)
+    print(f'{lower_lim} to {upper_lim}')
+    adata9 = adata9[(adata9.obs.n_genes_by_counts < upper_lim) & (adata9.obs.n_genes_by_counts > lower_lim)]
+    adata9 = adata9[adata9.obs.pct_counts_mt < 10] 
+    adata9 = adata9[adata9.obs['pct_counts_hb'] < 0.1].copy() 
+    
+    sc.pl.violin(adata9, ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_hb'],
+                 jitter=0.4, multi_panel=True)
+    
+    # -------------------------
+    # adata10
+    # -------------------------
+    sc.pp.calculate_qc_metrics(adata10, qc_vars=['mt', 'hb'], percent_top=None, log1p=False, inplace=True)
+    sc.pl.violin(adata10, ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_hb'],
+                 jitter=0.4, multi_panel=True)
+    
+    upper_lim = np.quantile(adata10.obs.n_genes_by_counts.values, .98)
+    lower_lim = np.quantile(adata10.obs.n_genes_by_counts.values, .02)
+    print(f'{lower_lim} to {upper_lim}')
+    adata10 = adata10[(adata10.obs.n_genes_by_counts < upper_lim) & (adata10.obs.n_genes_by_counts > lower_lim)]
+    adata10 = adata10[adata10.obs.pct_counts_mt < 10] # changed from 5 to 10
+    adata10 = adata10[adata10.obs['pct_counts_hb'] < 0.1].copy()
+    
+    sc.pl.violin(adata10, ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_hb'],
+                 jitter=0.4, multi_panel=True)
+    
+    # -------------------------
+    # adata11
+    # -------------------------
+    sc.pp.calculate_qc_metrics(adata11, qc_vars=['mt', 'hb'], percent_top=None, log1p=False, inplace=True)
+    sc.pl.violin(adata11, ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_hb'],
+                 jitter=0.4, multi_panel=True)
+    
+    upper_lim = np.quantile(adata11.obs.n_genes_by_counts.values, .98)
+    lower_lim = np.quantile(adata11.obs.n_genes_by_counts.values, .02)
+    print(f'{lower_lim} to {upper_lim}')
+    adata11 = adata11[(adata11.obs.n_genes_by_counts < upper_lim) & (adata11.obs.n_genes_by_counts > lower_lim)]
+    adata11 = adata11[adata11.obs.pct_counts_mt < 13] # changed from 10 to 13
+    adata11 = adata11[adata11.obs['pct_counts_hb'] < 0.1].copy()
+    
+    sc.pl.violin(adata11, ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_hb'],
+                 jitter=0.4, multi_panel=True)
+    
+    # -------------------------
+    # adata12
+    # -------------------------
+    sc.pp.calculate_qc_metrics(adata12, qc_vars=['mt', 'hb'], percent_top=None, log1p=False, inplace=True)
+    sc.pl.violin(adata12, ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_hb'],
+                 jitter=0.4, multi_panel=True)
+    
+    upper_lim = np.quantile(adata12.obs.n_genes_by_counts.values, .98)
+    lower_lim = np.quantile(adata12.obs.n_genes_by_counts.values, .02)
+    print(f'{lower_lim} to {upper_lim}')
+    adata12 = adata12[(adata12.obs.n_genes_by_counts < upper_lim) & (adata12.obs.n_genes_by_counts > lower_lim)]
+    adata12 = adata12[adata12.obs.pct_counts_mt < 13] # changed from 10 to 13
+    adata12 = adata12[adata12.obs['pct_counts_hb'] < 0.1].copy()
+    
+    sc.pl.violin(adata12, ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_hb'],
+                 jitter=0.4, multi_panel=True)
+    
+    # -------------------------
+    # adata13
+    # -------------------------
+    sc.pp.calculate_qc_metrics(adata13, qc_vars=['mt', 'hb'], percent_top=None, log1p=False, inplace=True)
+    sc.pl.violin(adata13, ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_hb'],
+                 jitter=0.4, multi_panel=True)
+    
+    upper_lim = np.quantile(adata13.obs.n_genes_by_counts.values, .98)
+    lower_lim = np.quantile(adata13.obs.n_genes_by_counts.values, .02)
+    print(f'{lower_lim} to {upper_lim}')
+    adata13 = adata13[(adata13.obs.n_genes_by_counts < upper_lim) & (adata13.obs.n_genes_by_counts > lower_lim)]
+    adata13 = adata13[adata13.obs.pct_counts_mt < 15] # changed from 10 to 15
+    adata13 = adata13[adata13.obs['pct_counts_hb'] < 0.1].copy()
+    
+    sc.pl.violin(adata13, ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_hb'],
+                 jitter=0.4, multi_panel=True)
+    
+    # -------------------------
+    # adata14
+    # -------------------------
+    sc.pp.calculate_qc_metrics(adata14, qc_vars=['mt', 'hb'], percent_top=None, log1p=False, inplace=True)
+    sc.pl.violin(adata14, ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_hb'],
+                 jitter=0.4, multi_panel=True)
+    
+    upper_lim = np.quantile(adata14.obs.n_genes_by_counts.values, .98)
+    lower_lim = np.quantile(adata14.obs.n_genes_by_counts.values, .02)
+    print(f'{lower_lim} to {upper_lim}')
+    adata14 = adata14[(adata14.obs.n_genes_by_counts < upper_lim) & (adata14.obs.n_genes_by_counts > lower_lim)]
+    adata14 = adata14[adata14.obs.pct_counts_mt < 16] # changed from 10 to 17
+    adata14 = adata14[adata14.obs['pct_counts_hb'] < 0.1].copy()
+    
+    sc.pl.violin(adata14, ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_hb'],
+                 jitter=0.4, multi_panel=True)
+    
+    # -------------------------
+    # adata15
+    # -------------------------
+    sc.pp.calculate_qc_metrics(adata15, qc_vars=['mt', 'hb'], percent_top=None, log1p=False, inplace=True)
+    sc.pl.violin(adata15, ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_hb'],
+                 jitter=0.4, multi_panel=True)
+    
+    upper_lim = np.quantile(adata15.obs.n_genes_by_counts.values, .98)
+    lower_lim = np.quantile(adata15.obs.n_genes_by_counts.values, .02)
+    print(f'{lower_lim} to {upper_lim}')
+    adata15 = adata15[(adata15.obs.n_genes_by_counts < upper_lim) & (adata15.obs.n_genes_by_counts > lower_lim)]
+    adata15 = adata15[adata15.obs.pct_counts_mt < 15] # changed from 10 to 15
+    adata15 = adata15[adata15.obs['pct_counts_hb'] < 0.1].copy()
+    
+    sc.pl.violin(adata15, ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_hb'],
+                 jitter=0.4, multi_panel=True)
+    
+    # -------------------------
+    # adata16
+    # -------------------------
+    sc.pp.calculate_qc_metrics(adata16, qc_vars=['mt', 'hb'], percent_top=None, log1p=False, inplace=True)
+    sc.pl.violin(adata16, ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_hb'],
+                 jitter=0.4, multi_panel=True)
+    
+    upper_lim = np.quantile(adata16.obs.n_genes_by_counts.values, .98)
+    lower_lim = np.quantile(adata16.obs.n_genes_by_counts.values, .02)
+    print(f'{lower_lim} to {upper_lim}')
+    adata16 = adata16[(adata16.obs.n_genes_by_counts < upper_lim) & (adata16.obs.n_genes_by_counts > lower_lim)]
+    adata16 = adata16[adata16.obs.pct_counts_mt < 20] # changed from 5 to 20
+    adata16 = adata16[adata16.obs['pct_counts_hb'] < 0.1].copy()
+    
+    sc.pl.violin(adata16, ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_hb'],
+                 jitter=0.4, multi_panel=True)
+    
+    # -------------------------
+    # adata17
+    # -------------------------
+    sc.pp.calculate_qc_metrics(adata17, qc_vars=['mt', 'hb'], percent_top=None, log1p=False, inplace=True)
+    sc.pl.violin(adata17, ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_hb'],
+                 jitter=0.4, multi_panel=True)
+    
+    upper_lim = np.quantile(adata17.obs.n_genes_by_counts.values, .98)
+    lower_lim = np.quantile(adata17.obs.n_genes_by_counts.values, .02)
+    print(f'{lower_lim} to {upper_lim}')
+    adata17 = adata17[(adata17.obs.n_genes_by_counts < upper_lim) & (adata17.obs.n_genes_by_counts > lower_lim)]
+    adata17 = adata17[adata17.obs.pct_counts_mt < 18] # changed from 10 to 18
+    adata17 = adata17[adata17.obs['pct_counts_hb'] < 0.1].copy()
+    
+    sc.pl.violin(adata17, ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_hb'],
+                 jitter=0.4, multi_panel=True)
+    
+    # -------------------------
+    # adata18
+    # -------------------------
+    sc.pp.calculate_qc_metrics(adata18, qc_vars=['mt', 'hb'], percent_top=None, log1p=False, inplace=True)
+    sc.pl.violin(adata18, ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_hb'],
+                 jitter=0.4, multi_panel=True)
+    
+    upper_lim = np.quantile(adata18.obs.n_genes_by_counts.values, .98)
+    lower_lim = np.quantile(adata18.obs.n_genes_by_counts.values, .02)
+    print(f'{lower_lim} to {upper_lim}')
+    adata18 = adata18[(adata18.obs.n_genes_by_counts < upper_lim) & (adata18.obs.n_genes_by_counts > lower_lim)]
+    adata18 = adata18[adata18.obs.pct_counts_mt < 17] # changed from 5 to 17
+    adata18 = adata18[adata18.obs['pct_counts_hb'] < 0.1].copy()
+    
+    sc.pl.violin(adata18, ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_hb'],
+                 jitter=0.4, multi_panel=True)
+    
+    # -------------------------
+    # adata19
+    # -------------------------
+    sc.pp.calculate_qc_metrics(adata19, qc_vars=['mt', 'hb'], percent_top=None, log1p=False, inplace=True)
+    sc.pl.violin(adata19, ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_hb'],
+                 jitter=0.4, multi_panel=True)
+    
+    upper_lim = np.quantile(adata19.obs.n_genes_by_counts.values, .98)
+    lower_lim = np.quantile(adata19.obs.n_genes_by_counts.values, .02)
+    print(f'{lower_lim} to {upper_lim}')
+    adata19 = adata19[(adata19.obs.n_genes_by_counts < upper_lim) & (adata19.obs.n_genes_by_counts > lower_lim)]
+    adata19 = adata19[adata19.obs.pct_counts_mt < 15] # changed from 10 to 15
+    adata19 = adata19[adata19.obs['pct_counts_hb'] < 0.1].copy()
+    
+    sc.pl.violin(adata19, ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_hb'],
+                 jitter=0.4, multi_panel=True)
+    
+    # -------------------------
+    # adata20
+    # -------------------------
+    sc.pp.calculate_qc_metrics(adata20, qc_vars=['mt', 'hb'], percent_top=None, log1p=False, inplace=True)
+    sc.pl.violin(adata20, ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_hb'],
+                 jitter=0.4, multi_panel=True)
+    
+    upper_lim = np.quantile(adata20.obs.n_genes_by_counts.values, .98)
+    lower_lim = np.quantile(adata20.obs.n_genes_by_counts.values, .02)
+    print(f'{lower_lim} to {upper_lim}')
+    adata20 = adata20[(adata20.obs.n_genes_by_counts < upper_lim) & (adata20.obs.n_genes_by_counts > lower_lim)]
+    adata20 = adata20[adata20.obs.pct_counts_mt < 18] # changed from 5 to 18
+    adata20 = adata20[adata20.obs['pct_counts_hb'] < 0.1].copy()
+    
+    sc.pl.violin(adata20, ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_hb'],
+                 jitter=0.4, multi_panel=True)
+    
+    # -------------------------
+    # adata21
+    # -------------------------
+    sc.pp.calculate_qc_metrics(adata21, qc_vars=['mt', 'hb'], percent_top=None, log1p=False, inplace=True)
+    sc.pl.violin(adata21, ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_hb'],
+                 jitter=0.4, multi_panel=True)
+    
+    upper_lim = np.quantile(adata21.obs.n_genes_by_counts.values, .98)
+    lower_lim = np.quantile(adata21.obs.n_genes_by_counts.values, .02)
+    print(f'{lower_lim} to {upper_lim}')
+    adata21 = adata21[(adata21.obs.n_genes_by_counts < upper_lim) & (adata21.obs.n_genes_by_counts > lower_lim)]
+    adata21 = adata21[adata21.obs.pct_counts_mt < 20] # changed from 10 to 20
+    adata21 = adata21[adata21.obs['pct_counts_hb'] < 0.1].copy()
+    
+    sc.pl.violin(adata21, ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_hb'],
+                 jitter=0.4, multi_panel=True)
+    
+    # -------------------------
+    # adata22
+    # -------------------------
+    sc.pp.calculate_qc_metrics(adata22, qc_vars=['mt', 'hb'], percent_top=None, log1p=False, inplace=True)
+    sc.pl.violin(adata22, ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_hb'],
+                 jitter=0.4, multi_panel=True)
+    
+    upper_lim = np.quantile(adata22.obs.n_genes_by_counts.values, .98)
+    lower_lim = np.quantile(adata22.obs.n_genes_by_counts.values, .02)
+    print(f'{lower_lim} to {upper_lim}')
+    adata22 = adata22[(adata22.obs.n_genes_by_counts < upper_lim) & (adata22.obs.n_genes_by_counts > lower_lim)]
+    adata22 = adata22[adata22.obs.pct_counts_mt < 16] # changed from 5 to 16
+    adata22 = adata22[adata22.obs['pct_counts_hb'] < 0.1].copy()
+    
+    sc.pl.violin(adata22, ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_hb'],
+                 jitter=0.4, multi_panel=True)
+    
+    # -------------------------
+    # adata23
+    # -------------------------
+    sc.pp.calculate_qc_metrics(adata23, qc_vars=['mt', 'hb'], percent_top=None, log1p=False, inplace=True)
+    sc.pl.violin(adata23, ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_hb'],
+                 jitter=0.4, multi_panel=True)
+    
+    upper_lim = np.quantile(adata23.obs.n_genes_by_counts.values, .98)
+    lower_lim = np.quantile(adata23.obs.n_genes_by_counts.values, .02)
+    print(f'{lower_lim} to {upper_lim}')
+    adata23 = adata23[(adata23.obs.n_genes_by_counts < upper_lim) & (adata23.obs.n_genes_by_counts > lower_lim)]
+    adata23 = adata23[adata23.obs.pct_counts_mt < 18] # changed from 10 to 18
+    adata23 = adata23[adata23.obs['pct_counts_hb'] < 0.1].copy()
+    
+    sc.pl.violin(adata23, ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_hb'],
+                 jitter=0.4, multi_panel=True)
+    
+    # -------------------------
+    # adata24
+    # -------------------------
+    sc.pp.calculate_qc_metrics(adata24, qc_vars=['mt', 'hb'], percent_top=None, log1p=False, inplace=True)
+    sc.pl.violin(adata24, ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_hb'],
+                 jitter=0.4, multi_panel=True)
+    
+    upper_lim = np.quantile(adata24.obs.n_genes_by_counts.values, .98)
+    lower_lim = np.quantile(adata24.obs.n_genes_by_counts.values, .02)
+    print(f'{lower_lim} to {upper_lim}')
+    adata24 = adata24[(adata24.obs.n_genes_by_counts < upper_lim) & (adata24.obs.n_genes_by_counts > lower_lim)]
+    adata24 = adata24[adata24.obs.pct_counts_mt < 20] # changed from 5 to 20
+    adata24 = adata24[adata24.obs['pct_counts_hb'] < 0.1].copy()
+    
+    sc.pl.violin(adata24, ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_hb'],
+                 jitter=0.4, multi_panel=True)
+    
+    # -------------------------
+    # adata25
+    # -------------------------
+    sc.pp.calculate_qc_metrics(adata25, qc_vars=['mt', 'hb'], percent_top=None, log1p=False, inplace=True)
+    sc.pl.violin(adata25, ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_hb'],
+                 jitter=0.4, multi_panel=True)
+    
+    upper_lim = np.quantile(adata25.obs.n_genes_by_counts.values, .98)
+    lower_lim = np.quantile(adata25.obs.n_genes_by_counts.values, .02)
+    print(f'{lower_lim} to {upper_lim}')
+    adata25 = adata25[(adata25.obs.n_genes_by_counts < upper_lim) & (adata25.obs.n_genes_by_counts > lower_lim)]
+    adata25 = adata25[adata25.obs.pct_counts_mt < 17] # changed from 10 to 17
+    adata25 = adata25[adata25.obs['pct_counts_hb'] < 0.1].copy()
+    
+    sc.pl.violin(adata25, ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_hb'],
+                 jitter=0.4, multi_panel=True)
+
+
+
+.. code:: ipython3
+
+    import scanpy as sc
+    
+    # Assuming adatas is a list containing your individual AnnData objects: [adata1, adata2, adata3, adata4]
+    adatas = [adata1, adata2, adata3, adata7, adata8, adata9, adata10, adata11, adata12, adata13, adata14, adata15, adata16, adata17, adata18, 
+              adata19, adata20, adata21, adata22, adata23, adata24, adata25]
+    
+    # Define sample names
+    sample_names = ['NAFLD_PT1', 'NAFLD_PT2', 'NAFLD_PT3', 'CON_Liver_PT1', 'CON_Liver_PT2', 'CON_Liver_PT3', 'CON_Liver_PT4', 
+                    'NAFLD_WBC_PT1', 'NAFLD_WBC_PT2', 'NAFLD_WBC_PT3', 'NAFLD_WBC_PT4', 'NAFLD_WBC_PT5', 'NAFLD_WBC_PT6', 'NAFLD_WBC_PT7', 'NAFLD_WBC_PT8',
+                    'NAFLD_WBC_PT9', 'CON_WBC_PT1', 'CON_WBC_PT2', 'CON_WBC_PT3', 'CON_WBC_PT4', 'CON_WBC_PT5', 'CON_WBC_PT6']
+    
+    
+    # Concatenate the list of AnnData objects into a single AnnData object
+    adata = sc.concat(adatas, join='outer', label='Sample', keys=sample_names)
+    
+    sc.pp.filter_genes(adata, min_cells = 10)
+    adata
+    adata.X
+    adata.write_h5ad('NAFLD_combined.h5ad')
+
+.. code:: ipython3
+
+    import scanpy as sc
+    
+    # Assuming adatas is a list containing your individual AnnData objects: [adata1, adata2, adata3, adata4]
+    adatas = [adata4, adata5, adata6, adata7, adata8, adata9, adata10, adata11, adata12, adata13, adata14, adata15, adata16, adata17, adata18, 
+              adata19, adata20, adata21, adata22, adata23, adata24, adata25]
+    
+    # Define sample names
+    sample_names = ['NASH_PT1', 'NASH_PT2', 'NASH_PT3', 'CON_Liver_PT1', 'CON_Liver_PT2', 'CON_Liver_PT3', 'CON_Liver_PT4', 
+                    'NAFLD_WBC_PT1', 'NAFLD_WBC_PT2', 'NAFLD_WBC_PT3', 'NAFLD_WBC_PT4', 'NAFLD_WBC_PT5', 'NAFLD_WBC_PT6', 'NAFLD_WBC_PT7', 'NAFLD_WBC_PT8',
+                    'NAFLD_WBC_PT9', 'CON_WBC_PT1', 'CON_WBC_PT2', 'CON_WBC_PT3', 'CON_WBC_PT4', 'CON_WBC_PT5', 'CON_WBC_PT6']
+    
+    
+    # Concatenate the list of AnnData objects into a single AnnData object
+    adata = sc.concat(adatas, join='outer', label='Sample', keys=sample_names)
+    
+    sc.pp.filter_genes(adata, min_cells = 10)
+    adata
+    adata.X
+    adata.write_h5ad('NASH_combined.h5ad')
+
+.. code:: ipython3
+
+    import scanpy as sc
+    
+    # Assuming adatas is a list containing your individual AnnData objects: [adata1, adata2, adata3, adata4]
+    adatas = [adata1, adata2, adata3, adata4, adata5, adata6, adata7, adata8, adata9, adata10, adata11, adata12, adata13, adata14, adata15, adata16, adata17, adata18, 
+              adata19, adata20, adata21, adata22, adata23, adata24, adata25]
+    
+    # Define sample names
+    sample_names = ['NAFLD_PT1', 'NAFLD_PT2', 'NAFLD_PT3', 'NASH_PT1', 'NASH_PT2', 'NASH_PT3', 'CON_Liver_PT1', 'CON_Liver_PT2', 'CON_Liver_PT3', 
+                    'CON_Liver_PT4', 
+                    'NAFLD_WBC_PT1', 'NAFLD_WBC_PT2', 'NAFLD_WBC_PT3', 'NAFLD_WBC_PT4', 'NAFLD_WBC_PT5', 'NAFLD_WBC_PT6', 'NAFLD_WBC_PT7', 'NAFLD_WBC_PT8',
+                    'NAFLD_WBC_PT9', 'CON_WBC_PT1', 'CON_WBC_PT2', 'CON_WBC_PT3', 'CON_WBC_PT4', 'CON_WBC_PT5', 'CON_WBC_PT6']
+    
+    
+    # Concatenate the list of AnnData objects into a single AnnData object
+    adata = sc.concat(adatas, join='outer', label='Sample', keys=sample_names)
+    
+    sc.pp.filter_genes(adata, min_cells = 10)
+    adata
+    adata.X
+    adata.write_h5ad('All_combined.h5ad')
+
